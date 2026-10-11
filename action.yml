@@ -1,0 +1,65 @@
+name: Well Tested suite run
+description: Run a Well Tested suite on every push or PR, wait for the verdict, and post one PR comment with proof links.
+author: Well Tested
+branding:
+  icon: check-circle
+  color: green
+inputs:
+  hook-url:
+    description: The suite trigger's hook URL (https://welltested.io/api/hooks/suites/<triggerId>).
+    required: true
+  token:
+    description: The trigger secret (wt_hook_...). Store it as secrets.WELLTESTED_HOOK.
+    required: true
+  wait:
+    description: Wait for the suite to finish and report the verdict.
+    required: false
+    default: "true"
+  comment-on-pr:
+    description: Upsert one PR comment (<!-- well-tested-evidence -->) for every terminal outcome.
+    required: false
+    default: "true"
+  fail-on:
+    description: Comma-separated verdicts that fail the job (passed, failed, blocked, not_counted).
+    required: false
+    default: "failed"
+  timeout-seconds:
+    description: Give up waiting after this many seconds.
+    required: false
+    default: "1800"
+  poll-interval-seconds:
+    description: Seconds between status polls.
+    required: false
+    default: "15"
+  github-token:
+    description: Token used to upsert the PR comment (needs pull-requests write).
+    required: false
+    default: ${{ github.token }}
+outputs:
+  verdict:
+    description: passed | failed | blocked | not_counted | pending (wait=false or timeout)
+    value: ${{ steps.run.outputs.verdict }}
+  proof-urls:
+    description: Newline-separated proof URLs, one per test run.
+    value: ${{ steps.run.outputs.proof-urls }}
+  batch-id:
+    description: The Well Tested batch id.
+    value: ${{ steps.run.outputs.batch-id }}
+  status-url:
+    description: The batch status URL (poll with the same bearer token).
+    value: ${{ steps.run.outputs.status-url }}
+runs:
+  using: composite
+  steps:
+    - id: run
+      shell: bash
+      run: node "$GITHUB_ACTION_PATH/run.mjs"
+      env:
+        WT_HOOK_URL: ${{ inputs.hook-url }}
+        WT_TOKEN: ${{ inputs.token }}
+        WT_WAIT: ${{ inputs.wait }}
+        WT_COMMENT_ON_PR: ${{ inputs.comment-on-pr }}
+        WT_FAIL_ON: ${{ inputs.fail-on }}
+        WT_TIMEOUT_SECONDS: ${{ inputs.timeout-seconds }}
+        WT_POLL_INTERVAL_SECONDS: ${{ inputs.poll-interval-seconds }}
+        WT_GITHUB_TOKEN: ${{ inputs.github-token }}
