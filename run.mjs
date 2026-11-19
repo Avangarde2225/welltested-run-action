@@ -93,7 +93,15 @@ async function main() {
   const failOn = new Set(env("WT_FAIL_ON", "failed").split(",").map((v) => v.trim()).filter(Boolean))
   const commentOnPr = truthy(env("WT_COMMENT_ON_PR", "true"))
 
-  const hook = await postHook({ hookUrl, token, commitSha, ref })
+  const wait = truthy(env("WT_WAIT", "true"))
+  const intervalMs = Number(env("WT_POLL_INTERVAL_SECONDS", "15")) * 1000
+  let hook = await postHook({ hookUrl, token, commitSha, ref })
+  // 202: an identical delivery is still starting the run. Ask once more for its address.
+  if (wait && hook.ok && !hook.body?.statusUrl) {
+    console.log("Well Tested accepted the delivery but sent no status address yet. Asking again once.")
+    await sleep(Math.min(intervalMs, 10_000))
+    hook = await postHook({ hookUrl, token, commitSha, ref })
+  }
   let verdict = "pending"
   let status = null
   let message = null
@@ -112,16 +120,23 @@ async function main() {
     setOutput("batch-id", hook.body.batchId ?? "")
     setOutput("status-url", hook.body.statusUrl ?? "")
     console.log(`Well Tested batch ${hook.body.batchId ?? "(merging)"}${merged ? " (merged)" : ""}`)
-    if (!truthy(env("WT_WAIT", "true")) || !hook.body.statusUrl) {
+    if (!wait || !hook.body.statusUrl) {
       setOutput("verdict", "pending")
       setOutput("proof-urls", "")
+      if (wait) {
+        console.error(
+          `Well Tested accepted the run but sent no status address, so this action could not follow the run. ` +
+            `Find it under Runs at ${new URL(hookUrl).origin}/app/runs.`,
+        )
+        process.exitCode = 1
+      }
       return
     }
     status = await pollStatus({
       statusUrl: hook.body.statusUrl,
       token,
       timeoutMs: Number(env("WT_TIMEOUT_SECONDS", "1800")) * 1000,
-      intervalMs: Number(env("WT_POLL_INTERVAL_SECONDS", "15")) * 1000,
+      intervalMs,
     })
     verdict = status?.batch?.terminal ? status.batch.verdict : "pending"
   }
